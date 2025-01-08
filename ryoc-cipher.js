@@ -20,7 +20,7 @@
  * - Ensure the key is securely stored or ephemeral.
  *
  * Author: Anders Lindman
- * Date: 2025-01-6
+ * Date: 2025-01-06
  * Version: 1.0
  */
 
@@ -33,7 +33,7 @@ async function generateRoundKeys(masterKey, numRounds, iv) {
     229, 60, 238, 99, 160, 218, 188, 221, 246, 45, 192, 156, 103, 54, 216, 97,
   ]) // Fixed salt
   const hashBuffer = await window.crypto.subtle.digest("SHA-256", iv)
-  const contextId = decoder.decode(new Uint8Array(hashBuffer))
+  const contextId = decoder.decode(hashBuffer)
 
   for (let i = 0; i < numRounds; i++) {
     const derivationMaterial = encoder.encode("RoundKey" + i + contextId) // Distinct info for each round
@@ -128,9 +128,6 @@ async function feistelDecrypt(block, keys) {
   const left = Uint8Array.from(block.slice(0, blockSize))
   const right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
 
-  //    const left = new Uint8Array(block.buffer, 0, blockSize); // First 32 bytes
-  //  const right = new Uint8Array(block.buffer, blockSize, blockSize); // Next 32 bytes
-
   // Decryption is the same as encryption but in reverse order
   for (let i = 0; i < 8; i++) {
     const temp = new Uint8Array(right)
@@ -156,7 +153,7 @@ async function roundFunction(data, cryptoKey) {
   return new Uint8Array(signature)
 }
 
-// Encryption with CBC mode (Correct)
+// Encryption with CBC mode
 async function encryptCBC(plaintext, keys) {
   const blockSize = 64
   const encoder = new TextEncoder()
@@ -217,7 +214,6 @@ async function decryptCBC(ciphertext, keys) {
 
     decryptedBlocks.push(plaintextBlock)
     previousBlock = block
-    //     previousBlock = Uint8Array.from(block); // Correct: previousBlock is the *previous* ciphertext block
   }
 
   let paddedPlaintext = new Uint8Array(decryptedBlocks.length * blockSize)
@@ -243,7 +239,7 @@ async function decrypt(ciphertext, key, iv) {
 }
 
 // Example usage
-(async () => {
+;(async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
   const iv = crypto.getRandomValues(new Uint8Array(64)) // 64-byte IV
