@@ -4,9 +4,10 @@ This project implements a **Feistel cipher** using **CBC (Cipher Block Chaining)
 The name Ryoc stands for "Roll your own crypto" and is a play on the slogan "Don't roll your own crypto".
 
 ## Features
-- **Feistel Cipher**: A symmetric encryption structure with 8 rounds.
-- **CBC Mode**: Provides better security by chaining blocks together.
-- **Key Schedule**: Provides key diversification.
+- **Feistel Cipher**: A symmetric encryption structure that uses a Feistel network with 8 rounds.
+- **256-bit key length**: Provides large key space.
+- **CBC Mode**: Offers better security by chaining blocks together.
+- **Key Schedule**: Generates unique round keys with strong diversification using HKDF.
 - **HMAC-SHA-256**: Used as the round function for secure hashing.
 - **PKCS7 Padding**: Ensures plaintexts of arbitrary lengths can be encrypted.
 
