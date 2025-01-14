@@ -9,6 +9,7 @@ The name Ryoc stands for "Roll your own crypto" and is a play on the slogan "Don
 - **CBC Mode**: Offers better security by chaining blocks together.
 - **Key Schedule**: Generates unique round keys with strong diversification using HKDF.
 - **HMAC-SHA-256**: Used as the round function for secure hashing.
+- **512-bit Initial Vector (IV)**: Enables unique ciphertexts and strengthens CBC mode.
 - **PKCS7 Padding**: Ensures plaintexts of arbitrary lengths can be encrypted.
 
 ## Usage
