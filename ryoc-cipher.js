@@ -88,67 +88,49 @@ function unpadPKCS7(data) {
   return data.slice(0, data.length - paddingLength)
 }
 
-// Feistel encryption function
-async function feistelEncrypt(block, keys) {
-  const encoder = new TextEncoder()
+async function feistelProcess(block, keys, isEncrypt) {
   // Split the block into two 256-bit halves
   const blockSize = 32 // 32 bytes = 256 bits
-  //  const left = new Uint8Array(block.buffer, 0, blockSize); // First 32 bytes
-  //  const right = new Uint8Array(block.buffer, blockSize, blockSize); // Next 32 bytes
-  const left = Uint8Array.from(block.slice(0, blockSize))
-  const right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
+  let left = Uint8Array.from(block.slice(0, blockSize))
+  let right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
+  if (!isEncrypt) {
+    const temp = new Uint8Array(left)
+    left = right
+    right = temp
+  }
 
   for (let i = 0; i < 8; i++) {
     const temp = new Uint8Array(left)
     left.set(right)
-    const roundOutput = await roundFunction(right, keys[i])
+    const roundOutput = await roundFunction(right, keys[isEncrypt ? i : 7 - i])
     for (let j = 0; j < blockSize; j++) {
       right[j] = temp[j] ^ roundOutput[j]
     }
   }
 
   // Combine the halves back into a single 512-bit block
-  const encrypted = new Uint8Array(2 * blockSize)
-  encrypted.set(left, 0)
-  encrypted.set(right, blockSize)
+  const result = new Uint8Array(2 * blockSize)
+  if (isEncrypt) {
+    result.set(left, 0)
+    result.set(right, blockSize)
+  } else {
+    result.set(right, 0)
+    result.set(left, blockSize)
+  }
 
-  return encrypted
+  return result
 }
 
-// Feistel decryption function
+async function feistelEncrypt(block, keys) {
+  return feistelProcess(block, keys, true)
+}
+
 async function feistelDecrypt(block, keys) {
-  const encoder = new TextEncoder()
-  // Ensure the block is exactly 64 bytes
-  if (block.length !== 64) {
-    throw new Error("Block must be exactly 64 bytes (512 bits)")
-  }
-
-  // Split the block into two 256-bit halves
-  const blockSize = 32 // 32 bytes = 256 bits
-  const left = Uint8Array.from(block.slice(0, blockSize))
-  const right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
-
-  // Decryption is the same as encryption but in reverse order
-  for (let i = 0; i < 8; i++) {
-    const temp = new Uint8Array(right)
-    right.set(left)
-    const roundOutput = await roundFunction(left, keys[7 - i])
-    for (let j = 0; j < blockSize; j++) {
-      left[j] = temp[j] ^ roundOutput[j]
-    }
-  }
-
-  // Combine the halves back into a single 512-bit block
-  const decrypted = new Uint8Array(2 * blockSize)
-  decrypted.set(left, 0)
-  decrypted.set(right, blockSize)
-
-  return decrypted
+  return feistelProcess(block, keys, false)
 }
 
 // Round function using HMAC-SHA-256
 async function roundFunction(data, cryptoKey) {
-  //console.log("roundFucntionCryptoKey= ", cryptoKey.algorithm)
   const signature = await crypto.subtle.sign("HMAC", cryptoKey, data)
   return new Uint8Array(signature)
 }
@@ -174,7 +156,7 @@ async function encryptCBC(plaintext, keys) {
 
     const encryptedBlock = await feistelEncrypt(blockToEncrypt, keys)
     encryptedBlocks.push(encryptedBlock)
-    previousBlock = encryptedBlock // Correct: previousBlock is the *current* ciphertext block
+    previousBlock = encryptedBlock
   }
   let ciphertext = new Uint8Array(
     iv.length + encryptedBlocks.length * blockSize,
@@ -189,7 +171,7 @@ async function encryptCBC(plaintext, keys) {
   return ciphertext
 }
 
-// Decryption with CBC mode (Correct)
+// Decryption with CBC mode
 async function decryptCBC(ciphertext, keys) {
   const blockSize = 64
   const decryptedBlocks = []
@@ -239,7 +221,7 @@ async function decrypt(ciphertext, key, iv) {
 }
 
 // Example usage
-;(async () => {
+(async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
   const iv = crypto.getRandomValues(new Uint8Array(64)) // 64-byte IV
