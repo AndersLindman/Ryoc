@@ -94,7 +94,7 @@ async function feistelProcess(block, keys, isEncrypt) {
   let left = Uint8Array.from(block.slice(0, blockSize))
   let right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
   if (!isEncrypt) {
-    const temp = new Uint8Array(left)
+    const temp = left
     left = right
     right = temp
   }
@@ -224,7 +224,7 @@ async function decrypt(ciphertext, key, iv) {
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
-  const iv = crypto.getRandomValues(new Uint8Array(64)) // 64-byte IV
+  const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
 
   try {
     // Encryption
