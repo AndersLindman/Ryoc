@@ -25,14 +25,14 @@
  */
 
 // Key schedule
-async function generateRoundKeys(masterKey, numRounds, iv) {
+async function generateRoundKeys(masterKey, numRounds) {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
   const roundKeys = []
   const salt = new Uint8Array([
     229, 60, 238, 99, 160, 218, 188, 221, 246, 45, 192, 156, 103, 54, 216, 97,
   ]) // Fixed salt
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", iv)
+  const hashBuffer = await window.crypto.subtle.digest("SHA-256", salt)
   const contextId = decoder.decode(hashBuffer)
   const keyData = encoder.encode(masterKey)
 
@@ -136,14 +136,13 @@ async function roundFunction(data, cryptoKey) {
 }
 
 // Encryption with CBC mode
-async function encryptCBC(plaintext, keys) {
+async function encryptCBC(plaintext, keys, iv) {
   const blockSize = 64
   const encoder = new TextEncoder()
   const plaintextBytes = encoder.encode(plaintext)
   const paddedPlaintext = padPKCS7(plaintextBytes, blockSize)
 
   const encryptedBlocks = []
-  const iv = crypto.getRandomValues(new Uint8Array(blockSize))
   let previousBlock = Uint8Array.from(iv) // Create a COPY of the IV
 
   for (let i = 0; i < paddedPlaintext.length; i += blockSize) {
@@ -210,18 +209,18 @@ async function decryptCBC(ciphertext, keys) {
 
 // Encryption including key schedule generation.
 async function encrypt(plaintext, key, iv) {
-  const keys = await generateRoundKeys(key, 8, iv)
+  const keys = await generateRoundKeys(key, 8)
   return encryptCBC(plaintext, keys, iv)
 }
 
 // Dncryption including key schedule generation.
-async function decrypt(ciphertext, key, iv) {
-  const keys = await generateRoundKeys(key, 8, iv)
-  return decryptCBC(ciphertext, keys, iv)
+async function decrypt(ciphertext, key) {
+  const keys = await generateRoundKeys(key, 8)
+  return decryptCBC(ciphertext, keys)
 }
 
 // Example usage
-;(async () => {
+(async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
   const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
@@ -236,7 +235,7 @@ async function decrypt(ciphertext, key, iv) {
         .join(""),
     )
     // Decryption
-    const decryptedText = await decrypt(ciphertext, key, iv)
+    const decryptedText = await decrypt(ciphertext, key)
     const decoder = new TextDecoder()
     console.log("Decrypted Text:", decoder.decode(decryptedText))
   } catch (error) {
