@@ -175,7 +175,7 @@ async function decryptCBC(ciphertext, keys) {
   const blockSize = 64
   const decryptedBlocks = []
   const iv = ciphertext.slice(0, blockSize)
-  let previousBlock = Uint8Array.from(iv) // Create a COPY of the IV
+  let previousBlock = iv
   const encryptedData = ciphertext.slice(blockSize)
 
   if ((ciphertext.length - blockSize) % blockSize !== 0) {
