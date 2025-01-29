@@ -34,18 +34,18 @@ async function generateRoundKeys(masterKey, numRounds, iv) {
   ]) // Fixed salt
   const hashBuffer = await window.crypto.subtle.digest("SHA-256", iv)
   const contextId = decoder.decode(hashBuffer)
+  const keyData = encoder.encode(masterKey)
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", // Format
+    keyData, // Key material (Uint8Array)
+    { name: "HKDF" }, // Algorithm for key derivation
+    false, // Not extractable
+    ["deriveKey"], // Key usages
+  )
 
   for (let i = 0; i < numRounds; i++) {
     const derivationMaterial = encoder.encode("RoundKey" + i + contextId) // Distinct info for each round
-    const keyData = encoder.encode(masterKey)
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw", // Format
-      keyData, // Key material (Uint8Array)
-      { name: "HKDF" }, // Algorithm for key derivation
-      false, // Not extractable
-      ["deriveKey"], // Key usages
-    )
-    cryptoKey
     try {
       const roundKey = await window.crypto.subtle.deriveKey(
         {
@@ -221,7 +221,7 @@ async function decrypt(ciphertext, key, iv) {
 }
 
 // Example usage
-(async () => {
+;(async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
   const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
