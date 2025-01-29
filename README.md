@@ -10,6 +10,7 @@ The name Ryoc stands for "Roll your own crypto" and is a play on the slogan "Don
 - **CBC Mode**: Offers better security by chaining blocks together.
 - **Key Schedule**: Generates unique round keys with strong diversification using HKDF.
 - **HMAC-SHA-256**: Used as the round function for secure hashing.
+- **256-bit salt**: Makes the round keys unique for each ciphertext.
 - **512-bit Initial Vector (IV)**: Enables unique ciphertexts and strengthens CBC mode.
 - **PKCS7 Padding**: Ensures plaintexts of arbitrary lengths can be encrypted.
 
@@ -29,11 +30,12 @@ Here's how to use the Feistel cipher for encryption and decryption:
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
-  const iv = crypto.getRandomValues(new Uint8Array(64)) // 64-byte IV
+  const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
+  const salt = crypto.getRandomValues(new Uint8Array(32)) // 256-bit random salt
 
   try {
     // Encryption
-    const ciphertext = await encrypt(plaintext, key, iv)
+    const ciphertext = await encrypt(plaintext, key, iv, salt)
     console.log(
       "Ciphertext:",
       Array.from(ciphertext)
@@ -41,7 +43,7 @@ Here's how to use the Feistel cipher for encryption and decryption:
         .join(""),
     )
     // Decryption
-    const decryptedText = await decrypt(ciphertext, key, iv)
+    const decryptedText = await decrypt(ciphertext, key)
     const decoder = new TextDecoder()
     console.log("Decrypted Text:", decoder.decode(decryptedText))
   } catch (error) {
