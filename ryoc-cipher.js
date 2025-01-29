@@ -25,13 +25,10 @@
  */
 
 // Key schedule
-async function generateRoundKeys(masterKey, numRounds) {
+async function generateRoundKeys(masterKey, numRounds, salt) {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
   const roundKeys = []
-  const salt = new Uint8Array([
-    229, 60, 238, 99, 160, 218, 188, 221, 246, 45, 192, 156, 103, 54, 216, 97,
-  ]) // Fixed salt
   const hashBuffer = await window.crypto.subtle.digest("SHA-256", salt)
   const contextId = decoder.decode(hashBuffer)
   const keyData = encoder.encode(masterKey)
@@ -136,14 +133,14 @@ async function roundFunction(data, cryptoKey) {
 }
 
 // Encryption with CBC mode
-async function encryptCBC(plaintext, keys, iv) {
+async function encryptCBC(plaintext, keys, iv, salt) {
   const blockSize = 64
   const encoder = new TextEncoder()
   const plaintextBytes = encoder.encode(plaintext)
   const paddedPlaintext = padPKCS7(plaintextBytes, blockSize)
 
   const encryptedBlocks = []
-  let previousBlock = Uint8Array.from(iv) // Create a COPY of the IV
+  let previousBlock = iv
 
   for (let i = 0; i < paddedPlaintext.length; i += blockSize) {
     const block = paddedPlaintext.slice(i, i + blockSize)
@@ -158,10 +155,11 @@ async function encryptCBC(plaintext, keys, iv) {
     previousBlock = encryptedBlock
   }
   let ciphertext = new Uint8Array(
-    iv.length + encryptedBlocks.length * blockSize,
+    salt.length + iv.length + encryptedBlocks.length * blockSize,
   ) // Include IV in ciphertext
-  ciphertext.set(iv, 0)
-  let offset = iv.length
+  ciphertext.set(salt, 0)
+  ciphertext.set(iv, 32)
+  let offset = salt.length + iv.length
   encryptedBlocks.forEach((block) => {
     ciphertext.set(block, offset)
     offset += block.length
@@ -174,13 +172,14 @@ async function encryptCBC(plaintext, keys, iv) {
 async function decryptCBC(ciphertext, keys) {
   const blockSize = 64
   const decryptedBlocks = []
-  const iv = ciphertext.slice(0, blockSize)
+  const salt = ciphertext.slice(0, 32)
+  const iv = ciphertext.slice(32, 32 + blockSize)
   let previousBlock = iv
-  const encryptedData = ciphertext.slice(blockSize)
+  const encryptedData = ciphertext.slice(blockSize + 32)
 
-  if ((ciphertext.length - blockSize) % blockSize !== 0) {
+  if ((ciphertext.length - blockSize - 32) % blockSize !== 0) {
     throw new Error(
-      "Ciphertext must be a multiple of 64 bytes + IV (512 bits + IV)",
+      "Ciphertext must be a multiple of 64 bytes + salt (32 bytes)",
     )
   }
 
@@ -208,14 +207,15 @@ async function decryptCBC(ciphertext, keys) {
 }
 
 // Encryption including key schedule generation.
-async function encrypt(plaintext, key, iv) {
-  const keys = await generateRoundKeys(key, 8)
-  return encryptCBC(plaintext, keys, iv)
+async function encrypt(plaintext, key, iv, salt) {
+  const keys = await generateRoundKeys(key, 8, salt)
+  return encryptCBC(plaintext, keys, iv, salt)
 }
 
 // Dncryption including key schedule generation.
 async function decrypt(ciphertext, key) {
-  const keys = await generateRoundKeys(key, 8)
+  const salt = ciphertext.slice(0, 32)
+  const keys = await generateRoundKeys(key, 8, salt)
   return decryptCBC(ciphertext, keys)
 }
 
@@ -224,10 +224,11 @@ async function decrypt(ciphertext, key) {
   const plaintext = "This is a secret message of arbitrary length!"
   const key = "mysecretkey"
   const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
+  const salt = crypto.getRandomValues(new Uint8Array(32)) // 256-bit random salt
 
   try {
     // Encryption
-    const ciphertext = await encrypt(plaintext, key, iv)
+    const ciphertext = await encrypt(plaintext, key, iv, salt)
     console.log(
       "Ciphertext:",
       Array.from(ciphertext)
