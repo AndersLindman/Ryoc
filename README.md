@@ -29,8 +29,7 @@ Here's how to use the Feistel cipher for encryption and decryption:
 // Example usage
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
-  const passphrase = "my-secret-passphrase" // Replace with at least 20 truly random English words for ~256-bit security
-
+  const passphrase = "my-secret-passphrase" // Replace with secure passphrase
   try {
     // Encryption
     const ciphertextBase64 = await encryptString(plaintext, passphrase)
