@@ -29,23 +29,15 @@ Here's how to use the Feistel cipher for encryption and decryption:
 // Example usage
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
-  const key = "mysecretkey"
-  const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
-  const salt = crypto.getRandomValues(new Uint8Array(32)) // 256-bit random salt
+  const passphrase = "my-secret-passphrase" // Replace with at least 20 truly random English words for ~256-bit security
 
   try {
     // Encryption
-    const ciphertext = await encrypt(plaintext, key, iv, salt)
-    console.log(
-      "Ciphertext:",
-      Array.from(ciphertext)
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join(""),
-    )
+    const ciphertextBase64 = await encryptString(plaintext, passphrase)
+    console.log("Encrypted Text:", ciphertextBase64)
     // Decryption
-    const decryptedText = await decrypt(ciphertext, key)
-    const decoder = new TextDecoder()
-    console.log("Decrypted Text:", decoder.decode(decryptedText))
+    const decryptedText = await decryptString(ciphertextBase64, passphrase)
+    console.log("Decrypted Text:", decryptedText)
   } catch (error) {
     console.error("Error:", error)
   }
