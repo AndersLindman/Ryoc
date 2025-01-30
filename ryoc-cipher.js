@@ -210,7 +210,7 @@ async function encrypt(plaintext, key, iv, salt) {
   return encryptCBC(plaintext, keys, iv, salt)
 }
 
-// Dncryption including key schedule generation.
+// Decryption including key schedule generation.
 async function decrypt(ciphertext, key) {
   const salt = ciphertext.slice(0, 32)
   const keys = await generateRoundKeys(key, 8, salt)
