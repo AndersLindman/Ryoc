@@ -31,7 +31,7 @@ async function generateRoundKeys(masterKey, numRounds, salt) {
   const roundKeys = []
   const hashBuffer = await window.crypto.subtle.digest("SHA-256", salt)
   const contextId = decoder.decode(hashBuffer)
-  const keyData = encoder.encode(masterKey)
+  const keyData = masterKey
 
   const cryptoKey = await crypto.subtle.importKey(
     "raw", // Format
@@ -133,10 +133,8 @@ async function roundFunction(data, cryptoKey) {
 }
 
 // Encryption with CBC mode
-async function encryptCBC(plaintext, keys, iv, salt) {
+async function encryptCBC(plaintextBytes, keys, iv, salt) {
   const blockSize = 64
-  const encoder = new TextEncoder()
-  const plaintextBytes = encoder.encode(plaintext)
   const paddedPlaintext = padPKCS7(plaintextBytes, blockSize)
 
   const encryptedBlocks = []
@@ -219,26 +217,53 @@ async function decrypt(ciphertext, key) {
   return decryptCBC(ciphertext, keys)
 }
 
+// Safe Base64 conversion (URL-safe variant)
+function bufferToBase64(buffer) {
+  return btoa(String.fromCharCode(...buffer))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
+}
+
+function base64ToBuffer(base64) {
+  const padded =
+    base64.replace(/-/g, "+").replace(/_/g, "/") +
+    "==".substring(0, (3 - (base64.length % 3)) % 3)
+  return new Uint8Array([...atob(padded)].map((c) => c.charCodeAt(0)))
+}
+
+// High-level convenience functions
+export async function encryptString(plaintext, passphrase) {
+  const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
+  const salt = crypto.getRandomValues(new Uint8Array(32)) // 256-bit random salt
+  const encoder = new TextEncoder()
+  const masterKey = encoder.encode(passphrase)
+  const plaintextBytes = encoder.encode(plaintext)
+  const ciphertextBytes = await encrypt(plaintextBytes, masterKey, iv, salt)
+  return bufferToBase64(ciphertextBytes)
+}
+
+export async function decryptString(ciphertextBase64, passphrase) {
+  const encoder = new TextEncoder()
+  const decoder = new TextDecoder()
+  const masterKey = encoder.encode(passphrase)
+  const ciphertext = base64ToBuffer(ciphertextBase64)
+  const plaintextBytes = await decrypt(ciphertext, masterKey)
+  return decoder.decode(plaintextBytes)
+}
+
 // Example usage
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
-  const key = "mysecretkey"
-  const iv = crypto.getRandomValues(new Uint8Array(64)) // 512-bit IV
-  const salt = crypto.getRandomValues(new Uint8Array(32)) // 256-bit random salt
+  const passphrase = "my-secret-passphrase" // Replace with at least 20 truly random English words for ~256-bit security
 
   try {
     // Encryption
-    const ciphertext = await encrypt(plaintext, key, iv, salt)
-    console.log(
-      "Ciphertext:",
-      Array.from(ciphertext)
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join(""),
-    )
+    const ciphertextBase64 = await encryptString(plaintext, passphrase)
+    console.log("Encrypted Text:", ciphertextBase64)
     // Decryption
-    const decryptedText = await decrypt(ciphertext, key)
-    const decoder = new TextDecoder()
-    console.log("Decrypted Text:", decoder.decode(decryptedText))
+    const decryptedText = await decryptString(ciphertextBase64, passphrase)
+    console.log("Decrypted Text:", decryptedText)
   } catch (error) {
     console.error("Error:", error)
   }
