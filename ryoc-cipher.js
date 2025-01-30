@@ -217,19 +217,17 @@ async function decrypt(ciphertext, key) {
   return decryptCBC(ciphertext, keys)
 }
 
-// Safe Base64 conversion (URL-safe variant)
+// Safe Base64 conversion
 function bufferToBase64(buffer) {
-  return btoa(String.fromCharCode(...buffer))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "")
+  const binString = Array.from(buffer, (byte) =>
+    String.fromCodePoint(byte),
+  ).join("")
+  return btoa(binString)
 }
 
 function base64ToBuffer(base64) {
-  const padded =
-    base64.replace(/-/g, "+").replace(/_/g, "/") +
-    "==".substring(0, (3 - (base64.length % 3)) % 3)
-  return new Uint8Array([...atob(padded)].map((c) => c.charCodeAt(0)))
+  const binString = atob(base64)
+  return Uint8Array.from(binString, (m) => m.codePointAt(0))
 }
 
 // High-level convenience functions
@@ -255,7 +253,7 @@ export async function decryptString(ciphertextBase64, passphrase) {
 // Example usage
 (async () => {
   const plaintext = "This is a secret message of arbitrary length!"
-  const passphrase = "my-secret-passphrase" // Replace with at least 20 truly random English words for ~256-bit security
+  const passphrase = "my-secret-passphrase" // Replace with secure passphrase
 
   try {
     // Encryption
