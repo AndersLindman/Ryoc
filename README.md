@@ -8,6 +8,7 @@ The name Ryoc stands for "Roll your own crypto" and is a play on the slogan "Don
 - **512-bit Block Size**: Enhances future-proofing for long-term data security.
 - **256-bit key length**: Provides large key space for post-quantum cryptography (PCQ) security.
 - **CBC Mode**: Offers better security by chaining blocks together.
+- **Key whitening**: Conceals the inputs to the first and last round functions.
 - **Key Schedule**: Generates unique round keys with strong diversification using HKDF.
 - **HMAC-SHA-256**: Used as the round function for secure hashing.
 - **256-bit salt**: Makes the round keys unique for each ciphertext.
