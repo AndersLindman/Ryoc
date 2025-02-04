@@ -132,7 +132,7 @@ async function roundFunction(data, cryptoKey) {
   return new Uint8Array(signature)
 }
 
-// Encryption with CBC mode
+/// Encryption with CBC mode including HKDF whitening keys
 async function encryptCBC(plaintextBytes, keys, iv, salt) {
   const blockSize = 64
   const paddedPlaintext = padPKCS7(plaintextBytes, blockSize)
@@ -140,17 +140,73 @@ async function encryptCBC(plaintextBytes, keys, iv, salt) {
   const encryptedBlocks = []
   let previousBlock = iv
 
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    salt, // Use salt as the initial key material for HKDF
+    { name: "HKDF" },
+    false,
+    ["deriveKey"],
+  )
+
   for (let i = 0; i < paddedPlaintext.length; i += blockSize) {
     const block = paddedPlaintext.slice(i, i + blockSize)
-    const blockToEncrypt = new Uint8Array(blockSize)
 
+    // Derive whitening keys using HKDF
+    const preWhiteningInfo = new TextEncoder().encode(`pre-whitening-${i}`)
+    const postWhiteningInfo = new TextEncoder().encode(`post-whitening-${i}`)
+
+    const preWhiteningKey = await window.crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: salt, info: preWhiteningInfo },
+      cryptoKey,
+      { name: "HMAC", hash: "SHA-256", length: blockSize * 8 }, // Key length in bits
+      false,
+      ["sign"],
+    )
+
+    const postWhiteningKey = await window.crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: salt, info: postWhiteningInfo },
+      cryptoKey,
+      { name: "HMAC", hash: "SHA-256", length: blockSize * 8 }, // Key length in bits
+      false,
+      ["sign"],
+    )
+
+    const preWhiteningKeyBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        preWhiteningKey,
+        new Uint8Array(blockSize),
+      ),
+    )
+    const postWhiteningKeyBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        postWhiteningKey,
+        new Uint8Array(blockSize),
+      ),
+    )
+
+    // Pre-whitening
+    const whitenedBlock = new Uint8Array(blockSize)
     for (let j = 0; j < blockSize; j++) {
-      blockToEncrypt[j] = block[j] ^ previousBlock[j]
+      whitenedBlock[j] = block[j] ^ preWhiteningKeyBytes[j]
+    }
+
+    const blockToEncrypt = new Uint8Array(blockSize)
+    for (let j = 0; j < blockSize; j++) {
+      blockToEncrypt[j] = whitenedBlock[j] ^ previousBlock[j]
     }
 
     const encryptedBlock = await feistelEncrypt(blockToEncrypt, keys)
-    encryptedBlocks.push(encryptedBlock)
-    previousBlock = encryptedBlock
+
+    // Post-whitening
+    const postWhitenedBlock = new Uint8Array(blockSize)
+    for (let j = 0; j < blockSize; j++) {
+      postWhitenedBlock[j] = encryptedBlock[j] ^ postWhiteningKeyBytes[j]
+    }
+
+    encryptedBlocks.push(postWhitenedBlock)
+    previousBlock = postWhitenedBlock
   }
   let ciphertext = new Uint8Array(
     salt.length + iv.length + encryptedBlocks.length * blockSize,
@@ -166,7 +222,6 @@ async function encryptCBC(plaintextBytes, keys, iv, salt) {
   return ciphertext
 }
 
-// Decryption with CBC mode
 async function decryptCBC(ciphertext, keys) {
   const blockSize = 64
   const decryptedBlocks = []
@@ -174,6 +229,14 @@ async function decryptCBC(ciphertext, keys) {
   const iv = ciphertext.slice(32, 32 + blockSize)
   let previousBlock = iv
   const encryptedData = ciphertext.slice(blockSize + 32)
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    salt, // Use salt as the initial key material for HKDF
+    { name: "HKDF" },
+    false,
+    ["deriveKey"],
+  )
 
   if ((ciphertext.length - blockSize - 32) % blockSize !== 0) {
     throw new Error(
@@ -183,15 +246,61 @@ async function decryptCBC(ciphertext, keys) {
 
   for (let i = 0; i < encryptedData.length; i += blockSize) {
     const block = Uint8Array.from(encryptedData.slice(i, i + blockSize))
-    const decryptedBlock = await feistelDecrypt(block, keys)
-    const plaintextBlock = new Uint8Array(blockSize)
 
+    // Derive whitening keys using HKDF (same as in encryption)
+    const preWhiteningInfo = new TextEncoder().encode(`pre-whitening-${i}`)
+    const postWhiteningInfo = new TextEncoder().encode(`post-whitening-${i}`)
+
+    const preWhiteningKey = await window.crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: salt, info: preWhiteningInfo },
+      cryptoKey,
+      { name: "HMAC", hash: "SHA-256", length: blockSize * 8 }, // Key length in bits
+      false,
+      ["sign"],
+    )
+
+    const postWhiteningKey = await window.crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: salt, info: postWhiteningInfo },
+      cryptoKey,
+      { name: "HMAC", hash: "SHA-256", length: blockSize * 8 }, // Key length in bits
+      false,
+      ["sign"],
+    )
+
+    const preWhiteningKeyBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        preWhiteningKey,
+        new Uint8Array(blockSize),
+      ),
+    )
+    const postWhiteningKeyBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        postWhiteningKey,
+        new Uint8Array(blockSize),
+      ),
+    )
+
+    // Reverse the operations:
+    // 1. Post-unwhitening:
+    const postUnwhitenedBlock = new Uint8Array(blockSize)
     for (let j = 0; j < blockSize; j++) {
-      plaintextBlock[j] = decryptedBlock[j] ^ previousBlock[j]
+      postUnwhitenedBlock[j] = block[j] ^ postWhiteningKeyBytes[j]
+    }
+
+    // 2. Feistel decryption:
+    const decryptedBlock = await feistelDecrypt(postUnwhitenedBlock, keys)
+
+    // 3. Pre-unwhitening and XOR with previous block
+    const plaintextBlock = new Uint8Array(blockSize)
+    for (let j = 0; j < blockSize; j++) {
+      plaintextBlock[j] =
+        decryptedBlock[j] ^ preWhiteningKeyBytes[j] ^ previousBlock[j] // Combined XOR
     }
 
     decryptedBlocks.push(plaintextBlock)
-    previousBlock = block
+    previousBlock = block // Update previousBlock for the next iteration
   }
 
   let paddedPlaintext = new Uint8Array(decryptedBlocks.length * blockSize)
