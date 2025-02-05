@@ -82,26 +82,29 @@ function unpadPKCS7(data) {
   if (paddingLength > data.length) {
     throw new Error("Invalid padding length")
   }
-  return data.slice(0, data.length - paddingLength)
+  return data.subarray(0, data.length - paddingLength)
 }
 
 async function feistelProcess(block, keys, isEncrypt) {
   // Split the block into two 256-bit halves
   const blockSize = 32 // 32 bytes = 256 bits
-  let left = Uint8Array.from(block.slice(0, blockSize))
-  let right = Uint8Array.from(block.slice(blockSize, 2 * blockSize))
+  let left = Uint8Array.from(block.subarray(0, blockSize))
+  let right = Uint8Array.from(block.subarray(blockSize, 2 * blockSize))
   if (!isEncrypt) {
     const temp = left
     left = right
     right = temp
   }
 
+  // Optimization: Reuse temp array for each round
+  const tempArray = new Uint8Array(blockSize)
+
   for (let i = 0; i < 8; i++) {
-    const temp = new Uint8Array(left)
+    tempArray.set(left)
     left.set(right)
     const roundOutput = await roundFunction(right, keys[isEncrypt ? i : 7 - i])
     for (let j = 0; j < blockSize; j++) {
-      right[j] = temp[j] ^ roundOutput[j]
+      right[j] = tempArray[j] ^ roundOutput[j]
     }
   }
 
@@ -148,8 +151,15 @@ async function encryptCBC(plaintextBytes, keys, iv, salt) {
     ["deriveKey"],
   )
 
+  // Pre-allocate arrays for whitening keys and blocks within the loop
+  const preWhiteningKeyBytes = new Uint8Array(blockSize)
+  const postWhiteningKeyBytes = new Uint8Array(blockSize)
+  const whitenedBlock = new Uint8Array(blockSize)
+  const blockToEncrypt = new Uint8Array(blockSize)
+  const postWhitenedBlock = new Uint8Array(blockSize)
+
   for (let i = 0; i < paddedPlaintext.length; i += blockSize) {
-    const block = paddedPlaintext.slice(i, i + blockSize)
+    const block = paddedPlaintext.subarray(i, i + blockSize)
 
     // Derive whitening keys using HKDF
     const preWhiteningInfo = new TextEncoder().encode(`pre-whitening-${i}`)
@@ -171,46 +181,49 @@ async function encryptCBC(plaintextBytes, keys, iv, salt) {
       ["sign"],
     )
 
-    const preWhiteningKeyBytes = new Uint8Array(
-      await crypto.subtle.sign(
-        "HMAC",
-        preWhiteningKey,
-        new Uint8Array(blockSize),
+    // Re-use pre-allocated arrays
+    preWhiteningKeyBytes.set(
+      new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          preWhiteningKey,
+          new Uint8Array(blockSize),
+        ),
       ),
     )
-    const postWhiteningKeyBytes = new Uint8Array(
-      await crypto.subtle.sign(
-        "HMAC",
-        postWhiteningKey,
-        new Uint8Array(blockSize),
+    postWhiteningKeyBytes.set(
+      new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          postWhiteningKey,
+          new Uint8Array(blockSize),
+        ),
       ),
     )
 
-    // Pre-whitening
-    const whitenedBlock = new Uint8Array(blockSize)
+    // Use pre-allocated whitenedBlock
     for (let j = 0; j < blockSize; j++) {
       whitenedBlock[j] = block[j] ^ preWhiteningKeyBytes[j]
     }
 
-    const blockToEncrypt = new Uint8Array(blockSize)
+    // Use pre-allocated blockToEncrypt
     for (let j = 0; j < blockSize; j++) {
       blockToEncrypt[j] = whitenedBlock[j] ^ previousBlock[j]
     }
 
     const encryptedBlock = await feistelEncrypt(blockToEncrypt, keys)
 
-    // Post-whitening
-    const postWhitenedBlock = new Uint8Array(blockSize)
+    // Use pre-allocated postWhitenedBlock
     for (let j = 0; j < blockSize; j++) {
       postWhitenedBlock[j] = encryptedBlock[j] ^ postWhiteningKeyBytes[j]
     }
-
-    encryptedBlocks.push(postWhitenedBlock)
+    encryptedBlocks.push(new Uint8Array(postWhitenedBlock))
     previousBlock = postWhitenedBlock
   }
   let ciphertext = new Uint8Array(
     salt.length + iv.length + encryptedBlocks.length * blockSize,
-  ) // Include IV in ciphertext
+  )
+  // Include IV in ciphertext
   ciphertext.set(salt, 0)
   ciphertext.set(iv, 32)
   let offset = salt.length + iv.length
@@ -225,10 +238,10 @@ async function encryptCBC(plaintextBytes, keys, iv, salt) {
 async function decryptCBC(ciphertext, keys) {
   const blockSize = 64
   const decryptedBlocks = []
-  const salt = ciphertext.slice(0, 32)
-  const iv = ciphertext.slice(32, 32 + blockSize)
+  const salt = ciphertext.subarray(0, 32)
+  const iv = ciphertext.subarray(32, 32 + blockSize)
   let previousBlock = iv
-  const encryptedData = ciphertext.slice(blockSize + 32)
+  const encryptedData = ciphertext.subarray(blockSize + 32)
 
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -244,8 +257,15 @@ async function decryptCBC(ciphertext, keys) {
     )
   }
 
+  // Pre-allocate arrays for whitening keys and blocks within loop
+  const preWhiteningKeyBytes = new Uint8Array(blockSize)
+  const postWhiteningKeyBytes = new Uint8Array(blockSize)
+  const postUnwhitenedBlock = new Uint8Array(blockSize)
+  const decryptedBlockHolder = new Uint8Array(blockSize)
+  const plaintextBlock = new Uint8Array(blockSize)
+
   for (let i = 0; i < encryptedData.length; i += blockSize) {
-    const block = Uint8Array.from(encryptedData.slice(i, i + blockSize))
+    const block = encryptedData.subarray(i, i + blockSize)
 
     // Derive whitening keys using HKDF (same as in encryption)
     const preWhiteningInfo = new TextEncoder().encode(`pre-whitening-${i}`)
@@ -267,39 +287,43 @@ async function decryptCBC(ciphertext, keys) {
       ["sign"],
     )
 
-    const preWhiteningKeyBytes = new Uint8Array(
-      await crypto.subtle.sign(
-        "HMAC",
-        preWhiteningKey,
-        new Uint8Array(blockSize),
+    // Re-use pre-allocated arrays
+    preWhiteningKeyBytes.set(
+      new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          preWhiteningKey,
+          new Uint8Array(blockSize),
+        ),
       ),
     )
-    const postWhiteningKeyBytes = new Uint8Array(
-      await crypto.subtle.sign(
-        "HMAC",
-        postWhiteningKey,
-        new Uint8Array(blockSize),
+    postWhiteningKeyBytes.set(
+      new Uint8Array(
+        await crypto.subtle.sign(
+          "HMAC",
+          postWhiteningKey,
+          new Uint8Array(blockSize),
+        ),
       ),
     )
 
     // Reverse the operations:
-    // 1. Post-unwhitening:
-    const postUnwhitenedBlock = new Uint8Array(blockSize)
+    // 1. Use pre-allocated postUnwhitenedBlock
     for (let j = 0; j < blockSize; j++) {
       postUnwhitenedBlock[j] = block[j] ^ postWhiteningKeyBytes[j]
     }
 
-    // 2. Feistel decryption:
+    // 2. Use pre-allocated decryptedBlockHolder
     const decryptedBlock = await feistelDecrypt(postUnwhitenedBlock, keys)
+    decryptedBlockHolder.set(decryptedBlock)
 
-    // 3. Pre-unwhitening and XOR with previous block
-    const plaintextBlock = new Uint8Array(blockSize)
+    // 3. Use pre-allocated plaintextBlock
     for (let j = 0; j < blockSize; j++) {
       plaintextBlock[j] =
-        decryptedBlock[j] ^ preWhiteningKeyBytes[j] ^ previousBlock[j] // Combined XOR
+        decryptedBlockHolder[j] ^ preWhiteningKeyBytes[j] ^ previousBlock[j]
     }
 
-    decryptedBlocks.push(plaintextBlock)
+    decryptedBlocks.push(new Uint8Array(plaintextBlock))
     previousBlock = block // Update previousBlock for the next iteration
   }
 
@@ -321,7 +345,7 @@ async function encrypt(plaintext, key, iv, salt) {
 
 // Decryption including key schedule generation.
 async function decrypt(ciphertext, key) {
-  const salt = ciphertext.slice(0, 32)
+  const salt = ciphertext.subarray(0, 32)
   const keys = await generateRoundKeys(key, 8, salt)
   return decryptCBC(ciphertext, keys)
 }
