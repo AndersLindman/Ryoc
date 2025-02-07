@@ -29,8 +29,6 @@ async function generateRoundKeys(masterKey, numRounds, salt) {
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
   const roundKeys = []
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", salt)
-  const contextId = decoder.decode(hashBuffer)
   const keyData = masterKey
 
   const cryptoKey = await crypto.subtle.importKey(
@@ -42,7 +40,7 @@ async function generateRoundKeys(masterKey, numRounds, salt) {
   )
 
   for (let i = 0; i < numRounds; i++) {
-    const derivationMaterial = encoder.encode("RoundKey" + i + contextId) // Distinct info for each round
+    const derivationMaterial = encoder.encode("RoundKey" + i) // Distinct info for each round
     try {
       const roundKey = await window.crypto.subtle.deriveKey(
         {
@@ -137,16 +135,10 @@ async function roundFunction(data, cryptoKey) {
 
 async function deriveHKDFKey(cryptoKey, salt, info, lengthBits) {
   return new Uint8Array(
-    await crypto.subtle.sign(
-      "HMAC",
-      await window.crypto.subtle.deriveKey(
-        { name: "HKDF", hash: "SHA-256", salt: salt, info: info },
-        cryptoKey,
-        { name: "HMAC", hash: "SHA-256", length: lengthBits },
-        false,
-        ["sign"],
-      ),
-      new Uint8Array(64), // Dummy data for HMAC-sign, only key matters for whitening
+    await crypto.subtle.deriveBits(
+      { name: "HKDF", hash: "SHA-256", salt: salt, info: info },
+      cryptoKey,
+      lengthBits,
     ),
   )
 }
@@ -168,7 +160,7 @@ async function feistelCBC(dataBytes, keys, iv, salt, isEncrypt) {
     salt,
     { name: "HKDF" },
     false,
-    ["deriveKey"],
+    ["deriveBits"],
   )
 
   // Pre-allocate arrays
