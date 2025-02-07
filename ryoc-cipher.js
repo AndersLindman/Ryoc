@@ -36,7 +36,7 @@ async function generateRoundKeys(masterKey, numRounds, salt) {
     keyData, // Key material (Uint8Array)
     { name: "HKDF" }, // Algorithm for key derivation
     false, // Not extractable
-    ["deriveKey"], // Key usages
+    ["deriveKey", "deriveBits"], // Key usages
   )
 
   for (let i = 0; i < numRounds; i++) {
@@ -54,11 +54,12 @@ async function generateRoundKeys(masterKey, numRounds, salt) {
         false, // Not extractable
         ["sign"], // Key usages
       )
-      roundKeys.push(roundKey)
+      roundKeys.push(roundKey) // For deriving whitening keys
     } catch (error) {
       console.log("An error: " + error)
     }
   }
+  roundKeys.push(cryptoKey)
   return roundKeys
 }
 
@@ -154,18 +155,9 @@ async function feistelCBC(dataBytes, keys, iv, salt, isEncrypt) {
 
   const processedBlocks = []
   let previousBlock = iv
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    salt,
-    { name: "HKDF" },
-    false,
-    ["deriveBits"],
-  )
+  const cryptoKey = keys[8]
 
   // Pre-allocate arrays
-  const preWhiteningKeyBytes = new Uint8Array(blockSize)
-  const postWhiteningKeyBytes = new Uint8Array(blockSize)
   const whitenedBlock = new Uint8Array(blockSize)
   const blockToFeistel = new Uint8Array(blockSize)
   const postWhitenedBlock = new Uint8Array(blockSize)
@@ -178,21 +170,18 @@ async function feistelCBC(dataBytes, keys, iv, salt, isEncrypt) {
     const preWhiteningInfo = new TextEncoder().encode(`pre-whitening-${i}`)
     const postWhiteningInfo = new TextEncoder().encode(`post-whitening-${i}`)
 
-    const preWhiteningKeyBytesTemp = await deriveHKDFKey(
+    const preWhiteningKeyBytes = await deriveHKDFKey(
       cryptoKey,
       salt,
       preWhiteningInfo,
       blockSize * 8,
     )
-    preWhiteningKeyBytes.set(preWhiteningKeyBytesTemp) // Use set to avoid reassignment
-
-    const postWhiteningKeyBytesTemp = await deriveHKDFKey(
+    const postWhiteningKeyBytes = await deriveHKDFKey(
       cryptoKey,
       salt,
       postWhiteningInfo,
       blockSize * 8,
     )
-    postWhiteningKeyBytes.set(postWhiteningKeyBytesTemp) // Use set to avoid reassignment
 
     if (isEncrypt) {
       // Pre-whitening
